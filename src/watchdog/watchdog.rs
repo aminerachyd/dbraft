@@ -71,31 +71,36 @@ impl Watchdog {
     ) {
         match event {
             Event::Register { addr } => {
-                let read_raft_instances = raft_instances.read().await;
-
-                let max_id = read_raft_instances.keys().max();
-                let mut new_id = 0;
-
-                if max_id.is_some() {
-                    new_id = max_id.unwrap() + 1;
-                }
-
-                drop(read_raft_instances);
-
-                raft_instances.write().await.insert(new_id, addr.clone());
-
-                dbg!("here");
-
-                info!(
-                    "Registered new instance at addr {} with id {}",
-                    addr, new_id
-                );
-
-                let watchdog_response = WatchdogResponse::Registered { id: new_id };
-
+                let watchdog_response = Self::register_new_instance(addr, raft_instances).await;
                 write_to_stream(stream, watchdog_response.into_bytes()).await;
             }
         }
+    }
+
+    async fn register_new_instance(
+        addr: String,
+        raft_instances: Arc<RwLock<HashMap<u32, String>>>,
+    ) -> WatchdogResponse {
+        let read_raft_instances = raft_instances.read().await;
+
+        let max_id = read_raft_instances.keys().max();
+
+        let mut new_id = 0;
+
+        if max_id.is_some() {
+            new_id = max_id.unwrap() + 1;
+        }
+
+        drop(read_raft_instances);
+
+        raft_instances.write().await.insert(new_id, addr.clone());
+
+        info!(
+            "Registered new instance at addr {} with id {}",
+            addr, new_id
+        );
+
+        WatchdogResponse::Registered { id: new_id }
     }
 
     async fn get_instances(
@@ -104,14 +109,6 @@ impl Watchdog {
         let raft_instances = &*raft_instances.read().await;
 
         raft_instances.to_owned()
-    }
-
-    async fn register_instance(
-        raft_instances: Arc<RwLock<HashMap<u32, String>>>,
-        RaftInstance { id, addr }: RaftInstance,
-    ) {
-        let raft_instances = &mut *raft_instances.write().await;
-        raft_instances.insert(id, addr);
     }
 
     async fn remove_instance(

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, io};
+use std::{
+    collections::HashMap,
+    io::{self, ErrorKind},
+};
 
 use axum::{
     extract::Path,
@@ -25,12 +28,18 @@ pub async fn start_endpoint(port: u32) -> io::Result<()> {
         .route("/item", post(put_item));
 
     info!("Endpoint started, listening on port {}", port);
-    axum::Server::bind(&format!("0.0.0.0:{}", port).parse().unwrap())
-        .serve(api.into_make_service())
-        .await
-        .unwrap();
+    let server = axum::Server::try_bind(&format!("0.0.0.0:{}", port).parse().unwrap());
 
-    Ok(())
+    if server.is_ok() {
+        server
+            .unwrap()
+            .serve(api.into_make_service())
+            .await
+            .unwrap();
+        Ok(())
+    } else {
+        Err(io::Error::from(ErrorKind::AddrInUse))
+    }
 }
 
 async fn root() -> String {

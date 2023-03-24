@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
 
-use crate::{db::request::Request, raft::raft::Raft};
+use crate::db::request::Request;
 
 use super::{
     db_response::DatabaseResponse,

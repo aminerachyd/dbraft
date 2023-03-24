@@ -10,6 +10,7 @@ use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
 
 use crate::watchdog::event::{Event, SerializeDeserialize, WatchdogResponse};
 
+#[derive(Clone)]
 pub struct Raft {
     id: Option<u32>,
     addr: String,

@@ -3,6 +3,31 @@ use tokio::{
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
 };
 
+#[derive(Clone, Copy)]
+pub struct InstancePorts {
+    pub db: u32,
+    pub endpoint: u32,
+    pub raft: u32,
+}
+
+impl InstancePorts {
+    pub fn new() -> Self {
+        InstancePorts {
+            db: 8888,
+            endpoint: 42069,
+            raft: 9000,
+        }
+    }
+
+    pub fn add(self, number: u32) -> Self {
+        InstancePorts {
+            db: self.db + number,
+            endpoint: self.endpoint + number,
+            raft: self.raft + number,
+        }
+    }
+}
+
 pub async fn read_from_stream(stream: OwnedReadHalf) -> Option<Vec<u8>> {
     let buf_reader = BufReader::new(stream);
 
