@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
 
-use crate::db::request::Request;
+use crate::{db::request::Request, raft::raft::Raft};
 
 use super::{
     db_response::DatabaseResponse,
@@ -17,14 +17,12 @@ use super::{
 };
 
 pub struct Database<T> {
-    id: u32,
     store: Box<dyn DataStore<T>>,
 }
 
 impl<T: Clone + Debug + 'static> Database<T> {
-    pub fn new(id: u32) -> Self {
+    pub fn new() -> Self {
         Database {
-            id,
             store: Box::new(HashMapStore::new()),
         }
     }
