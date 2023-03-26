@@ -1,21 +1,24 @@
-use std::{collections::HashMap, io::Result, thread, time::Duration};
+use std::{collections::HashMap, io::Result, process::exit, thread, time::Duration};
 
 use dbraft::{read_from_stream, write_to_stream};
 use log::{error, info};
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpListener, TcpStream},
-};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
 
-use crate::watchdog::event::{Event, SerializeDeserialize, WatchdogResponse};
+use crate::{
+    communication::send::{Heartbeat, P2PSend},
+    watchdog::event::{InstanceEvent, SerializeDeserialize, WatchdogEvent},
+};
 
 #[derive(Clone)]
 pub struct Raft {
     id: Option<u32>,
     addr: String,
-    peers: HashMap<String, String>,
+    peers: HashMap<u32, String>,
 }
+
+impl P2PSend for Raft {}
+impl Heartbeat for Raft {}
 
 impl Raft {
     pub fn new() -> Self {
@@ -32,20 +35,21 @@ impl Raft {
 
         let (read_stream, write_stream) = stream.into_split();
 
-        let request = Event::Register {
+        let request = InstanceEvent::Register {
             addr: self.addr.clone(),
         };
 
         write_to_stream(write_stream, request.into_bytes()).await;
 
         if let Some(bytes) = read_from_stream(read_stream).await {
-            let watchdog_response = WatchdogResponse::parse_from_bytes(bytes);
+            let watchdog_response = WatchdogEvent::parse_from_bytes(bytes);
 
             match watchdog_response {
                 Ok(watchdog_response) => match watchdog_response {
-                    WatchdogResponse::Registered { id } => {
+                    WatchdogEvent::InstanceRegistered { id } => {
                         self.id = Some(id);
                     }
+                    WatchdogEvent::RaftInstances { peers: _ } => {}
                 },
                 Err(_) => {
                     error!("Unknown watchdog response")
@@ -70,14 +74,43 @@ impl Raft {
             thread::sleep(Duration::from_secs(2));
         }
 
+        // Periodically check Watchdog if alive, if not exit program
+        tokio::spawn(async move {
+            loop {
+                if Self::service_is_alive(&watchdog_addr.clone()).await == false {
+                    error!("Watchdog is dead, exiting");
+                    exit(1);
+                }
+
+                thread::sleep(Duration::from_secs(5));
+            }
+        });
+
+        // Listen for events
         let mut stream_listener = TcpListenerStream::new(listener);
 
         while let Some(mut stream) = stream_listener.try_next().await.unwrap() {
-            stream
-                .write_all("Hello from Raft instance".as_bytes())
-                .await?;
+            self.handle_stream(stream).await;
+
+            // stream
+            //     .write_all("Hello from Raft instance".as_bytes())
+            //     .await?;
         }
 
         Ok(())
+    }
+
+    async fn handle_stream(&mut self, stream: TcpStream) {
+        let (read_stream, write_stream) = stream.into_split();
+        let watchdog_event =
+            WatchdogEvent::parse_from_bytes(read_from_stream(read_stream).await.unwrap()).unwrap();
+
+        match watchdog_event {
+            WatchdogEvent::RaftInstances { peers } => {
+                info!("Received instances list {:?}", &peers);
+                self.peers = peers;
+            }
+            WatchdogEvent::InstanceRegistered { id: _ } => {}
+        }
     }
 }

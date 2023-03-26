@@ -1,3 +1,5 @@
+use std::io::{Error, ErrorKind, Result};
+
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
@@ -40,7 +42,11 @@ pub async fn read_from_stream(stream: OwnedReadHalf) -> Option<Vec<u8>> {
     Some(result.into())
 }
 
-pub async fn write_to_stream(mut stream: OwnedWriteHalf, bytes: Vec<u8>) {
-    stream.write_all(&bytes[..]).await.unwrap();
-    stream.flush().await.unwrap();
+pub async fn write_to_stream(mut stream: OwnedWriteHalf, bytes: Vec<u8>) -> Result<()> {
+    stream.write_all(&bytes[..]).await?;
+
+    match stream.flush().await {
+        Ok(()) => Ok(()),
+        Err(_) => Err(Error::from(ErrorKind::AddrNotAvailable)),
+    }
 }

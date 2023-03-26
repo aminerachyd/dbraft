@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Result, sync::Arc};
+use std::{collections::HashMap, io::Result, sync::Arc, thread, time::Duration};
 
 use dbraft::{read_from_stream, write_to_stream};
 use log::{error, info};
@@ -8,18 +8,19 @@ use tokio::{
 };
 use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
 
-use crate::watchdog::event::WatchdogResponse;
+use crate::{
+    communication::send::{Broadcast, P2PSend},
+    watchdog::event::WatchdogEvent,
+};
 
-use super::event::{Event, SerializeDeserialize};
+use super::event::{InstanceEvent, SerializeDeserialize};
 
 pub struct Watchdog {
     raft_instances: Arc<RwLock<HashMap<u32, String>>>,
 }
 
-struct RaftInstance {
-    id: u32,
-    addr: String,
-}
+impl P2PSend for Watchdog {}
+impl Broadcast for Watchdog {}
 
 impl Watchdog {
     pub fn new() -> Self {
@@ -34,6 +35,16 @@ impl Watchdog {
         info!("Watchdog started, listening on port {}", port);
 
         let mut stream_listener = TcpListenerStream::new(listener);
+
+        let raft_instances = Arc::clone(&self.raft_instances);
+
+        tokio::spawn(async move {
+            loop {
+                Self::broadcast_instances_list(&raft_instances).await;
+
+                thread::sleep(Duration::from_secs(10));
+            }
+        });
 
         while let Some(stream) = stream_listener.try_next().await.unwrap() {
             let raft_instances = Arc::clone(&self.raft_instances);
@@ -51,7 +62,7 @@ impl Watchdog {
 
         let bytes = read_from_stream(read_stream).await.unwrap();
 
-        let request = Event::parse_from_bytes(bytes);
+        let request = InstanceEvent::parse_from_bytes(bytes);
 
         match request {
             Ok(event) => {
@@ -65,12 +76,12 @@ impl Watchdog {
     }
 
     async fn handle_event(
-        event: Event,
+        event: InstanceEvent,
         stream: OwnedWriteHalf,
         raft_instances: Arc<RwLock<HashMap<u32, String>>>,
     ) {
         match event {
-            Event::Register { addr } => {
+            InstanceEvent::Register { addr } => {
                 let watchdog_response = Self::register_new_instance(addr, raft_instances).await;
                 write_to_stream(stream, watchdog_response.into_bytes()).await;
             }
@@ -80,7 +91,7 @@ impl Watchdog {
     async fn register_new_instance(
         addr: String,
         raft_instances: Arc<RwLock<HashMap<u32, String>>>,
-    ) -> WatchdogResponse {
+    ) -> WatchdogEvent {
         let read_raft_instances = raft_instances.read().await;
 
         let max_id = read_raft_instances.keys().max();
@@ -100,21 +111,24 @@ impl Watchdog {
             addr, new_id
         );
 
-        WatchdogResponse::Registered { id: new_id }
+        WatchdogEvent::InstanceRegistered { id: new_id }
     }
 
-    async fn get_instances(
-        raft_instances: Arc<RwLock<HashMap<u32, String>>>,
-    ) -> HashMap<u32, String> {
+    async fn broadcast_instances_list(raft_instances: &Arc<RwLock<HashMap<u32, String>>>) {
         let raft_instances = &*raft_instances.read().await;
+        let raft_instances_vec: Vec<&String> = raft_instances.iter().map(|(k, v)| v).collect();
 
-        raft_instances.to_owned()
+        let data = WatchdogEvent::RaftInstances {
+            peers: raft_instances.to_owned(),
+        }
+        .into_bytes();
+
+        info!("Broadcasting instances list");
+        Self::broadcast(raft_instances_vec, data).await;
+        // raft_instances.values().for_each(|addr| {});
     }
 
-    async fn remove_instance(
-        raft_instances: Arc<RwLock<HashMap<u32, String>>>,
-        RaftInstance { id, addr: _ }: RaftInstance,
-    ) {
+    async fn remove_instance(raft_instances: Arc<RwLock<HashMap<u32, String>>>, id: u32) {
         let raft_instances = &mut *raft_instances.write().await;
 
         raft_instances.remove(&id);

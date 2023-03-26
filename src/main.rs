@@ -1,3 +1,4 @@
+mod communication;
 mod db;
 mod db_connexion;
 mod listener;

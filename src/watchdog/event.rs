@@ -1,19 +1,29 @@
-use std::io::{self, ErrorKind, Result};
+use std::{
+    collections::HashMap,
+    io::{self, ErrorKind, Result},
+};
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum Event {
+pub enum InstanceEvent {
     Register { addr: String },
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum WatchdogResponse {
-    Registered { id: u32 },
+#[derive(Serialize, Deserialize, Debug)]
+pub enum WatchdogEvent {
+    InstanceRegistered { id: u32 },
+    RaftInstances { peers: HashMap<u32, String> },
 }
 
-impl SerializeDeserialize for Event {}
-impl SerializeDeserialize for WatchdogResponse {}
+#[derive(Serialize, Deserialize, Debug)]
+pub enum HeartbeatMessage {
+    Test,
+}
+
+impl SerializeDeserialize for InstanceEvent {}
+impl SerializeDeserialize for WatchdogEvent {}
+impl SerializeDeserialize for HeartbeatMessage {}
 
 pub trait SerializeDeserialize: Sized + Serialize + for<'a> Deserialize<'a> {
     fn parse_from_bytes(bytes: Vec<u8>) -> Result<Self> {
