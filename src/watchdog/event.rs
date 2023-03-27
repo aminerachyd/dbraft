@@ -13,7 +13,7 @@ pub enum InstanceEvent {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum WatchdogEvent {
     InstanceRegistered { id: u32 },
-    RaftInstances { peers: HashMap<u32, String> },
+    UpdateRaftInstances { peers: HashMap<u32, String> },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

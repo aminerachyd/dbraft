@@ -49,7 +49,7 @@ impl Raft {
                     WatchdogEvent::InstanceRegistered { id } => {
                         self.id = Some(id);
                     }
-                    WatchdogEvent::RaftInstances { peers: _ } => {}
+                    WatchdogEvent::UpdateRaftInstances { peers: _ } => {}
                 },
                 Err(_) => {
                     error!("Unknown watchdog response")
@@ -69,7 +69,7 @@ impl Raft {
         self.addr = format!("0.0.0.0:{}", port);
 
         while self.id.is_none() {
-            self.connect_to_watchdog(watchdog_addr.clone()).await;
+            self.connect_to_watchdog(watchdog_addr.clone()).await?;
 
             thread::sleep(Duration::from_secs(2));
         }
@@ -89,12 +89,8 @@ impl Raft {
         // Listen for events
         let mut stream_listener = TcpListenerStream::new(listener);
 
-        while let Some(mut stream) = stream_listener.try_next().await.unwrap() {
+        while let Some(stream) = stream_listener.try_next().await.unwrap() {
             self.handle_stream(stream).await;
-
-            // stream
-            //     .write_all("Hello from Raft instance".as_bytes())
-            //     .await?;
         }
 
         Ok(())
@@ -103,14 +99,16 @@ impl Raft {
     async fn handle_stream(&mut self, stream: TcpStream) {
         let (read_stream, write_stream) = stream.into_split();
         let watchdog_event =
-            WatchdogEvent::parse_from_bytes(read_from_stream(read_stream).await.unwrap()).unwrap();
+            WatchdogEvent::parse_from_bytes(read_from_stream(read_stream).await.unwrap());
 
-        match watchdog_event {
-            WatchdogEvent::RaftInstances { peers } => {
-                info!("Received instances list {:?}", &peers);
-                self.peers = peers;
+        if let Ok(watchdog_event) = watchdog_event {
+            match watchdog_event {
+                WatchdogEvent::UpdateRaftInstances { peers } => {
+                    info!("Received instances list {:?}", &peers);
+                    self.peers = peers;
+                }
+                WatchdogEvent::InstanceRegistered { id: _ } => {}
             }
-            WatchdogEvent::InstanceRegistered { id: _ } => {}
         }
     }
 }

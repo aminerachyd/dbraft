@@ -1,26 +1,31 @@
 use std::{collections::HashMap, io::Result, sync::Arc, thread, time::Duration};
 
 use dbraft::{read_from_stream, write_to_stream};
+use futures::TryStreamExt;
 use log::{error, info};
 use tokio::{
     net::{tcp::OwnedWriteHalf, TcpListener, TcpStream},
     sync::RwLock,
 };
-use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
+use tokio_stream::wrappers::TcpListenerStream;
 
 use crate::{
-    communication::send::{Broadcast, P2PSend},
+    communication::send::{Broadcast, Heartbeat, P2PSend},
+    raft::raft::Raft,
     watchdog::event::WatchdogEvent,
 };
 
 use super::event::{InstanceEvent, SerializeDeserialize};
 
+type RaftInstances = Arc<RwLock<HashMap<u32, String>>>;
+
 pub struct Watchdog {
-    raft_instances: Arc<RwLock<HashMap<u32, String>>>,
+    raft_instances: RaftInstances,
 }
 
 impl P2PSend for Watchdog {}
 impl Broadcast for Watchdog {}
+impl Heartbeat for Watchdog {}
 
 impl Watchdog {
     pub fn new() -> Self {
@@ -38,9 +43,10 @@ impl Watchdog {
 
         let raft_instances = Arc::clone(&self.raft_instances);
 
+        // Periodically check alive instances and broadcast list
         tokio::spawn(async move {
             loop {
-                Self::broadcast_instances_list(&raft_instances).await;
+                Self::check_alive_instances(&raft_instances).await;
 
                 thread::sleep(Duration::from_secs(10));
             }
@@ -57,7 +63,7 @@ impl Watchdog {
         Ok(())
     }
 
-    async fn handle_stream(stream: TcpStream, raft_instances: Arc<RwLock<HashMap<u32, String>>>) {
+    async fn handle_stream(stream: TcpStream, raft_instances: RaftInstances) {
         let (read_stream, write_stream) = stream.into_split();
 
         let bytes = read_from_stream(read_stream).await.unwrap();
@@ -78,7 +84,7 @@ impl Watchdog {
     async fn handle_event(
         event: InstanceEvent,
         stream: OwnedWriteHalf,
-        raft_instances: Arc<RwLock<HashMap<u32, String>>>,
+        raft_instances: RaftInstances,
     ) {
         match event {
             InstanceEvent::Register { addr } => {
@@ -88,10 +94,7 @@ impl Watchdog {
         }
     }
 
-    async fn register_new_instance(
-        addr: String,
-        raft_instances: Arc<RwLock<HashMap<u32, String>>>,
-    ) -> WatchdogEvent {
+    async fn register_new_instance(addr: String, raft_instances: RaftInstances) -> WatchdogEvent {
         let read_raft_instances = raft_instances.read().await;
 
         let max_id = read_raft_instances.keys().max();
@@ -114,18 +117,50 @@ impl Watchdog {
         WatchdogEvent::InstanceRegistered { id: new_id }
     }
 
-    async fn broadcast_instances_list(raft_instances: &Arc<RwLock<HashMap<u32, String>>>) {
+    async fn check_alive_instances(raft_instances: &RaftInstances) {
+        let read_raft_instances = raft_instances.read().await;
+
+        let mut dead_instances: Vec<(u32, String)> = Vec::new();
+
+        info!("Checking health of instances");
+
+        for (id, addr) in &*read_raft_instances {
+            if !Self::service_is_alive(addr).await {
+                dead_instances.push((id.clone(), addr.clone()));
+            }
+        }
+
+        if dead_instances.len() > 0 {
+            tokio::task::spawn_blocking({
+                let lock = Arc::clone(&raft_instances);
+                move || {
+                    let mut lock = lock.blocking_write();
+
+                    let instances = &mut *lock;
+
+                    for (id, addr) in dead_instances {
+                        info!("Instance at {} is dead, removing it", addr.clone());
+                        instances.remove(&id);
+                    }
+
+                    drop(lock);
+                }
+            });
+        }
+        Self::broadcast_instances_list(&raft_instances).await;
+    }
+
+    async fn broadcast_instances_list(raft_instances: &RaftInstances) {
         let raft_instances = &*raft_instances.read().await;
         let raft_instances_vec: Vec<&String> = raft_instances.iter().map(|(k, v)| v).collect();
 
-        let data = WatchdogEvent::RaftInstances {
+        let data = WatchdogEvent::UpdateRaftInstances {
             peers: raft_instances.to_owned(),
         }
         .into_bytes();
 
         info!("Broadcasting instances list");
         Self::broadcast(raft_instances_vec, data).await;
-        // raft_instances.values().for_each(|addr| {});
     }
 
     async fn remove_instance(raft_instances: Arc<RwLock<HashMap<u32, String>>>, id: u32) {

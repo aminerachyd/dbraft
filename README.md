@@ -19,7 +19,7 @@ This is a simple distributed key-value store implemented in Rust, created for le
   - [x] One watchdog instance, multiple instances connecting to it
   - [x] Broadcast instances list to each instance
   - [x] Perform heartbeat test from instances to watchdog, exit when watchdog is dead
-  - [ ] Perform heartbeat test from watchdog to instances
+  - [x] Perform heartbeat test from watchdog to instances
 
 - [ ] Implement Raft algorithm
   - [ ] Service discovery using a watchdog
