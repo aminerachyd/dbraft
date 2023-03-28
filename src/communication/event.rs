@@ -1,14 +1,13 @@
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    io::{self, ErrorKind, Result},
-};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Event {
     InstanceEvent(InstanceEvent),
     WatchdogEvent(WatchdogEvent),
     HeartbeatMessage(HeartbeatMessage),
+    DatabaseRequest(DatabaseRequest<String>),
+    RaftResponse(RaftResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -29,23 +28,19 @@ pub enum HeartbeatMessage {
     Test,
 }
 
-impl SerializeDeserialize for Event {}
-impl SerializeDeserialize for InstanceEvent {}
-impl SerializeDeserialize for WatchdogEvent {}
-impl SerializeDeserialize for HeartbeatMessage {}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum DatabaseRequest<T> {
+    Get(String),
+    Put { id: String, item: T },
+}
 
-pub trait SerializeDeserialize: Sized + Serialize + for<'a> Deserialize<'a> {
-    fn parse_from_bytes(bytes: Vec<u8>) -> Result<Self> {
-        let result = serde_json::from_slice(&bytes[..]);
+#[derive(Debug, Serialize, Deserialize)]
+pub enum DatabaseResponse<T: Clone> {
+    GetSuccess(T),
+    PutSuccess { id: String, item: T },
+}
 
-        if result.is_ok() {
-            Ok(result.unwrap())
-        } else {
-            Err(io::Error::from(ErrorKind::InvalidData))
-        }
-    }
-
-    fn into_bytes(self) -> Vec<u8> {
-        serde_json::to_vec(&self).unwrap()
-    }
+#[derive(Debug, Serialize, Deserialize)]
+pub enum RaftResponse {
+    Committed,
 }

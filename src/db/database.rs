@@ -1,40 +1,59 @@
 use std::{
     fmt::Debug,
     io::{self, ErrorKind, Result},
+    process::exit,
 };
 
 use dbraft::{read_from_stream, write_to_stream};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
 
-use crate::db::request::Request;
-
-use super::{
-    db_response::DatabaseResponse,
-    store::datastore::{DataStore, HashMapStore},
+use crate::{
+    communication::event::{DatabaseRequest, DatabaseResponse, RaftResponse},
+    raft::raft_session::raft_session::RaftSession,
 };
+
+use super::store::datastore::{DataStore, HashMapStore};
 
 pub struct Database<T> {
     store: Box<dyn DataStore<T>>,
+    raft_connexion: Option<RaftSession>,
 }
 
-impl<T: Clone + Debug + 'static> Database<T> {
+impl Database<String> {
     pub fn new() -> Self {
         Database {
             store: Box::new(HashMapStore::new()),
+            raft_connexion: None,
         }
     }
 
-    pub fn handle_request(&mut self, request: Request<T>) -> Result<DatabaseResponse<T>> {
-        match request {
-            Request::Get(id) => self.get(id),
-            Request::Put { id, item } => self.put(id, item),
+    pub async fn handle_request(
+        &mut self,
+        request: DatabaseRequest<String>,
+    ) -> Result<DatabaseResponse<String>> {
+        // Asking Raft instances
+        let raft_response = self
+            .raft_connexion
+            .as_mut()
+            .unwrap()
+            .ask_peers(request.clone())
+            .await;
+
+        match raft_response {
+            Ok(raft_response) => match raft_response {
+                RaftResponse::Committed => match request {
+                    DatabaseRequest::Get(id) => self.get(id),
+                    DatabaseRequest::Put { id, item } => self.put(id, item),
+                },
+            },
+            Err(err) => Err(io::Error::from(err)),
         }
     }
 
-    fn get(&self, id: String) -> Result<DatabaseResponse<T>> {
+    fn get(&self, id: String) -> Result<DatabaseResponse<String>> {
         let opt = self.store.get(&id);
 
         match opt {
@@ -49,7 +68,7 @@ impl<T: Clone + Debug + 'static> Database<T> {
         }
     }
 
-    fn put(&mut self, id: String, item: T) -> Result<DatabaseResponse<T>> {
+    fn put(&mut self, id: String, item: String) -> Result<DatabaseResponse<String>> {
         let res = self.store.put(id.clone(), item.clone());
 
         match res {
@@ -66,12 +85,22 @@ impl<T: Clone + Debug + 'static> Database<T> {
 }
 
 pub async fn run_database<T: for<'a> Deserialize<'a> + Serialize + Debug + Clone + 'static>(
-    mut database: Database<T>,
+    mut database: Database<String>,
     port: u32,
+    raft_addr: String,
 ) -> Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
     info!("Database started, listening on port {}", port);
+
+    let raft_stream = TcpStream::connect(raft_addr).await;
+    if raft_stream.is_ok() {
+        database.raft_connexion = Some(RaftSession::new(raft_stream.unwrap()));
+        info!("Database connected to local Raft instance");
+    } else {
+        error!("Couldn't connect to local Raft instance, exiting");
+        exit(1);
+    }
 
     let mut stream_listener = TcpListenerStream::new(listener);
 
@@ -82,17 +111,17 @@ pub async fn run_database<T: for<'a> Deserialize<'a> + Serialize + Debug + Clone
 
         let bytes = read_from_stream(read_stream).await;
 
-        let request = Request::<T>::parse_from_bytes(bytes.unwrap());
+        let request = DatabaseRequest::<String>::parse_from_bytes(bytes.unwrap());
 
         if request.is_ok() {
             let request = request.unwrap();
 
-            let response = database.handle_request(request);
+            let response = database.handle_request(request).await;
 
             if response.is_ok() {
                 let response = response.unwrap().into_bytes();
 
-                write_to_stream(write_stream, response).await;
+                write_to_stream(write_stream, response).await.unwrap();
             } else {
             }
         } else {

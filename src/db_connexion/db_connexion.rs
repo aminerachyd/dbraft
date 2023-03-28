@@ -4,7 +4,7 @@ use dbraft::{read_from_stream, write_to_stream};
 use log::info;
 use tokio::net::{tcp::OwnedReadHalf, TcpStream};
 
-use crate::db::{db_response::DatabaseResponse, request::Request};
+use crate::communication::event::{DatabaseRequest, DatabaseResponse};
 
 pub struct DBConnexion {
     connexion: TcpStream,
@@ -19,7 +19,7 @@ pub async fn connect_to_database(addr: String) -> Result<DBConnexion> {
 
 impl DBConnexion {
     pub async fn get(self, id: String) -> Result<String> {
-        let get_request = Request::<String>::Get(id).into_bytes();
+        let get_request = DatabaseRequest::<String>::Get(id).into_bytes();
 
         let (read_stream, write_stream) = self.connexion.into_split();
 
@@ -29,7 +29,7 @@ impl DBConnexion {
     }
 
     pub async fn put(self, id: String, item: String) -> Result<String> {
-        let put_request = Request::<String>::Put { id, item }.into_bytes();
+        let put_request = DatabaseRequest::<String>::Put { id, item }.into_bytes();
 
         let (read_stream, write_stream) = self.connexion.into_split();
 

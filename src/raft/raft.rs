@@ -16,8 +16,12 @@ use tokio::{
 use tokio_stream::{wrappers::TcpListenerStream, StreamExt};
 
 use crate::{
-    communication::event::{Event, InstanceEvent, SerializeDeserialize, WatchdogEvent},
-    communication::send::{self, Heartbeat, P2PSend},
+    communication::event::{Event, InstanceEvent, WatchdogEvent},
+    communication::{
+        event::DatabaseRequest,
+        impl_event::SerializeDeserialize,
+        send::{Broadcast, Heartbeat, P2PSend},
+    },
 };
 
 type RaftInstances = Arc<RwLock<HashMap<u32, String>>>;
@@ -31,6 +35,7 @@ pub struct Raft {
 
 impl P2PSend for Raft {}
 impl Heartbeat for Raft {}
+impl Broadcast for Raft {}
 
 impl Raft {
     pub fn new() -> Self {
@@ -71,6 +76,14 @@ impl Raft {
                     Event::InstanceEvent(_) => {
                         // Receiving instances event
                     }
+                    Event::DatabaseRequest(database_request) => {
+                        // TODO
+                        dbg!(database_request);
+                    }
+                    Event::RaftResponse(raft_response) => {
+                        // TODO
+                        dbg!(raft_response);
+                    }
                 },
                 Err(_) => {
                     error!("Unknown watchdog response")
@@ -110,11 +123,9 @@ impl Raft {
         let peers = Arc::clone(&self.peers);
         tokio::spawn(async move {
             loop {
-                // dbg!(peers.len());
-
                 Self::ping_all_peers(&peers).await;
 
-                thread::sleep(Duration::from_secs(2));
+                thread::sleep(Duration::from_secs(15));
             }
         });
 
@@ -141,6 +152,14 @@ impl Raft {
                     Self::handle_instance_event(instance_event, write_stream).await;
                 }
                 Event::HeartbeatMessage(message) => {}
+                Event::DatabaseRequest(database_request) => {
+                    dbg!(&database_request);
+                    self.handle_database_request(database_request).await;
+                }
+                Event::RaftResponse(raft_response) => {
+                    // TODO
+                    dbg!(raft_response);
+                }
             },
             Err(_) => {
                 error!("Unknown event")
@@ -175,10 +194,19 @@ impl Raft {
         }
     }
 
+    // TODO
+    async fn handle_database_request(&mut self, database_event: DatabaseRequest<String>) {
+        let instances = self.peers.read().await;
+        let addr_list = instances.iter().map(|(_, addr)| addr).collect();
+
+        let database_event = database_event.into_bytes();
+
+        // Broadcast event to other Raft instances
+        Self::broadcast(addr_list, database_event).await;
+    }
+
     async fn ping_all_peers(peers: &RaftInstances) {
         let peers = &*peers.read().await;
-
-        dbg!(peers.len());
 
         for (_, addr) in peers {
             info!("Sending ping to {}", &addr);

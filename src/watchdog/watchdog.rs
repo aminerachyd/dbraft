@@ -12,10 +12,10 @@ use tokio_stream::wrappers::TcpListenerStream;
 use crate::{
     communication::event::{HeartbeatMessage, WatchdogEvent},
     communication::{
-        event::{Event, InstanceEvent, SerializeDeserialize},
+        event::{Event, InstanceEvent},
+        impl_event::SerializeDeserialize,
         send::{Broadcast, Heartbeat, P2PSend},
     },
-    raft::raft::Raft,
 };
 
 type RaftInstances = Arc<RwLock<HashMap<u32, String>>>;
@@ -84,6 +84,14 @@ impl Watchdog {
                     }
                     Event::WatchdogEvent(_) => {
                         // Two watchdogs ?
+                    }
+                    Event::DatabaseRequest(database_request) => {
+                        // TODO
+                        dbg!(database_request);
+                    }
+                    Event::RaftResponse(raft_response) => {
+                        // TODO
+                        dbg!(raft_response);
                     }
                 }
             }

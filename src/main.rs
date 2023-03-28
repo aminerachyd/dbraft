@@ -59,7 +59,10 @@ async fn start_dbraft_instance(watchdog_addr: String, ports: InstancePorts) -> R
     });
 
     let mut db = Database::<String>::new();
-    while run_database(db, db_port).await.is_err() {
+    while run_database::<String>(db, db_port, format!("0.0.0.0:{}", raft_port))
+        .await
+        .is_err()
+    {
         db = Database::<String>::new();
         db_port += 1;
     }

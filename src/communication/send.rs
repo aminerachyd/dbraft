@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use dbraft::write_to_stream;
 use tokio::net::TcpStream;
 
-use crate::communication::event::{Event, HeartbeatMessage, SerializeDeserialize};
+use crate::communication::event::{Event, HeartbeatMessage};
+
+use super::impl_event::SerializeDeserialize;
 
 #[async_trait]
 pub trait P2PSend {
