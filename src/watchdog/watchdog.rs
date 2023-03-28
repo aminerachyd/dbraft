@@ -10,12 +10,13 @@ use tokio::{
 use tokio_stream::wrappers::TcpListenerStream;
 
 use crate::{
-    communication::send::{Broadcast, Heartbeat, P2PSend},
+    communication::event::{HeartbeatMessage, WatchdogEvent},
+    communication::{
+        event::{Event, InstanceEvent, SerializeDeserialize},
+        send::{Broadcast, Heartbeat, P2PSend},
+    },
     raft::raft::Raft,
-    watchdog::event::WatchdogEvent,
 };
-
-use super::event::{InstanceEvent, SerializeDeserialize};
 
 type RaftInstances = Arc<RwLock<HashMap<u32, String>>>;
 
@@ -68,12 +69,23 @@ impl Watchdog {
 
         let bytes = read_from_stream(read_stream).await.unwrap();
 
-        let request = InstanceEvent::parse_from_bytes(bytes);
+        let request = Event::parse_from_bytes(bytes);
 
         match request {
             Ok(event) => {
                 info!("Received event {:?}", event);
-                Self::handle_event(event, write_stream, raft_instances).await;
+                match event {
+                    Event::InstanceEvent(instance_event) => {
+                        Self::handle_instance_event(instance_event, write_stream, raft_instances)
+                            .await;
+                    }
+                    Event::HeartbeatMessage(HeartbeatMessage::Test) => {
+                        // Heartbeat message
+                    }
+                    Event::WatchdogEvent(_) => {
+                        // Two watchdogs ?
+                    }
+                }
             }
             Err(_) => {
                 error!("Unknown event");
@@ -81,20 +93,27 @@ impl Watchdog {
         }
     }
 
-    async fn handle_event(
+    async fn handle_instance_event(
         event: InstanceEvent,
         stream: OwnedWriteHalf,
         raft_instances: RaftInstances,
     ) {
         match event {
+            InstanceEvent::Ping => {
+                let pong = Event::InstanceEvent(InstanceEvent::Pong);
+                write_to_stream(stream, pong.into_bytes()).await;
+            }
             InstanceEvent::Register { addr } => {
                 let watchdog_response = Self::register_new_instance(addr, raft_instances).await;
                 write_to_stream(stream, watchdog_response.into_bytes()).await;
             }
+            InstanceEvent::Pong => {
+                // We ain't reeiving pongs
+            }
         }
     }
 
-    async fn register_new_instance(addr: String, raft_instances: RaftInstances) -> WatchdogEvent {
+    async fn register_new_instance(addr: String, raft_instances: RaftInstances) -> Event {
         let read_raft_instances = raft_instances.read().await;
 
         let max_id = read_raft_instances.keys().max();
@@ -114,7 +133,7 @@ impl Watchdog {
             addr, new_id
         );
 
-        WatchdogEvent::InstanceRegistered { id: new_id }
+        Event::WatchdogEvent(WatchdogEvent::InstanceRegistered { id: new_id })
     }
 
     async fn check_alive_instances(raft_instances: &RaftInstances) {
@@ -154,9 +173,9 @@ impl Watchdog {
         let raft_instances = &*raft_instances.read().await;
         let raft_instances_vec: Vec<&String> = raft_instances.iter().map(|(k, v)| v).collect();
 
-        let data = WatchdogEvent::UpdateRaftInstances {
+        let data = Event::WatchdogEvent(WatchdogEvent::UpdateRaftInstances {
             peers: raft_instances.to_owned(),
-        }
+        })
         .into_bytes();
 
         info!("Broadcasting instances list");

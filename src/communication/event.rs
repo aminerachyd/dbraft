@@ -1,13 +1,21 @@
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     io::{self, ErrorKind, Result},
 };
 
-use serde::{Deserialize, Serialize};
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Event {
+    InstanceEvent(InstanceEvent),
+    WatchdogEvent(WatchdogEvent),
+    HeartbeatMessage(HeartbeatMessage),
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum InstanceEvent {
     Register { addr: String },
+    Ping,
+    Pong,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -21,6 +29,7 @@ pub enum HeartbeatMessage {
     Test,
 }
 
+impl SerializeDeserialize for Event {}
 impl SerializeDeserialize for InstanceEvent {}
 impl SerializeDeserialize for WatchdogEvent {}
 impl SerializeDeserialize for HeartbeatMessage {}

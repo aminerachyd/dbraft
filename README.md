@@ -14,7 +14,7 @@ This is a simple distributed key-value store implemented in Rust, created for le
   - [x] TCP based API
   - [x] HTTP based API
 
-- [ ] Implement watchdog for service discovery
+- [x] Implement watchdog for service discovery
 
   - [x] One watchdog instance, multiple instances connecting to it
   - [x] Broadcast instances list to each instance
@@ -22,8 +22,9 @@ This is a simple distributed key-value store implemented in Rust, created for le
   - [x] Perform heartbeat test from watchdog to instances
 
 - [ ] Implement Raft algorithm
-  - [ ] Service discovery using a watchdog
-  - [ ] Peer communication
+  - [x] Service discovery using a watchdog
+  - [x] Peer communication (Ping, Pong)
+  - [ ] Database communicating with Raft instance
   - [ ] Leader election
   - [ ] Log replication
   - [ ] Client interaction
