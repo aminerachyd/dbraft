@@ -8,6 +8,7 @@ pub enum Event {
     HeartbeatMessage(HeartbeatMessage),
     DatabaseRequest(DatabaseRequest<String>),
     RaftResponse(RaftResponse),
+    RaftMessage(RaftMessage),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -43,4 +44,16 @@ pub enum DatabaseResponse<T: Clone> {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RaftResponse {
     Committed,
+    VoteGranted,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum RaftMessage {
+    RequestVote {
+        candidate_term: u32,
+        candidate_id: u32,
+        last_log_index: u32,
+        last_log_term: u32,
+    },
+    AppendEntry,
 }

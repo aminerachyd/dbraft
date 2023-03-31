@@ -24,7 +24,10 @@ This is a simple distributed key-value store implemented in Rust, created for le
 - [ ] Implement Raft algorithm
   - [x] Service discovery using a watchdog
   - [x] Peer communication (Ping, Pong)
-  - [ ] Database communicating with Raft instance
   - [ ] Leader election
+    - [ ] Election timeout and votes request
+    - [ ] Votes response from followers
+    - [ ] Sending heartbeat to followers
   - [ ] Log replication
+  - [ ] Database communicating with Raft instance
   - [ ] Client interaction

@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, ErrorKind, Result};
 
 use super::event::{
-    DatabaseRequest, DatabaseResponse, Event, HeartbeatMessage, InstanceEvent, WatchdogEvent,
+    DatabaseRequest, DatabaseResponse, Event, HeartbeatMessage, InstanceEvent, RaftMessage,
+    RaftResponse, WatchdogEvent,
 };
 impl<T: for<'a> Deserialize<'a> + Serialize + Clone> DatabaseResponse<T> {
     pub fn parse_from_bytes(bytes: Vec<u8>) -> Result<Self> {
@@ -40,6 +41,8 @@ impl SerializeDeserialize for Event {}
 impl SerializeDeserialize for InstanceEvent {}
 impl SerializeDeserialize for WatchdogEvent {}
 impl SerializeDeserialize for HeartbeatMessage {}
+impl SerializeDeserialize for RaftMessage {}
+impl SerializeDeserialize for RaftResponse {}
 
 pub trait SerializeDeserialize: Sized + Serialize + for<'a> Deserialize<'a> {
     fn parse_from_bytes(bytes: Vec<u8>) -> Result<Self> {

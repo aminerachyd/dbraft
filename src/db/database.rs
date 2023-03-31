@@ -48,6 +48,9 @@ impl Database<String> {
                     DatabaseRequest::Get(id) => self.get(id),
                     DatabaseRequest::Put { id, item } => self.put(id, item),
                 },
+                RaftResponse::VoteGranted => {
+                    todo!()
+                }
             },
             Err(err) => Err(io::Error::from(err)),
         }
@@ -111,7 +114,7 @@ pub async fn run_database<T: for<'a> Deserialize<'a> + Serialize + Debug + Clone
 
         let bytes = read_from_stream(read_stream).await;
 
-        let request = DatabaseRequest::<String>::parse_from_bytes(bytes.unwrap());
+        let request = DatabaseRequest::<String>::parse_from_bytes(bytes);
 
         if request.is_ok() {
             let request = request.unwrap();

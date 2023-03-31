@@ -67,7 +67,7 @@ impl Watchdog {
     async fn handle_stream(stream: TcpStream, raft_instances: RaftInstances) {
         let (read_stream, write_stream) = stream.into_split();
 
-        let bytes = read_from_stream(read_stream).await.unwrap();
+        let bytes = read_from_stream(read_stream).await;
 
         let request = Event::parse_from_bytes(bytes);
 
@@ -92,6 +92,10 @@ impl Watchdog {
                     Event::RaftResponse(raft_response) => {
                         // TODO
                         dbg!(raft_response);
+                    }
+                    Event::RaftMessage(raft_message) => {
+                        // TODO
+                        dbg!(raft_message);
                     }
                 }
             }

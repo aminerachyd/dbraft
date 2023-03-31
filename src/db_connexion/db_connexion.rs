@@ -41,7 +41,7 @@ impl DBConnexion {
     async fn read_database_response(stream: OwnedReadHalf) -> Result<String> {
         let bytes = read_from_stream(stream).await;
 
-        let response = DatabaseResponse::<String>::parse_from_bytes(bytes.unwrap());
+        let response = DatabaseResponse::<String>::parse_from_bytes(bytes);
 
         match response {
             Ok(db_response) => match db_response {
